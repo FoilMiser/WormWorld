@@ -1,519 +1,519 @@
-+{
-+  "$schema": "https://json-schema.org/draft/2020-12/schema",
-+  "$id": "https://wormworld.example.com/schemas/genome/v0",
-+  "title": "WormWorld Genome v0",
-+  "type": "object",
-+  "additionalProperties": false,
-+  "required": [
-+    "version",
-+    "id",
-+    "name",
-+    "seed",
-+    "metadata",
-+    "body",
-+    "brain",
-+    "senses",
-+    "reproduction",
-+    "muscles",
-+    "pheromone_pairs",
-+    "nerves",
-+    "energy",
-+    "fitness_weights"
-+  ],
-+  "properties": {
-+    "version": {
-+      "const": "v0",
-+      "description": "Genome schema version identifier."
-+    },
-+    "id": {
-+      "type": "string",
-+      "minLength": 1,
-+      "maxLength": 64,
-+      "description": "Unique genome identifier (UUID recommended)."
-+    },
-+    "name": {
-+      "type": "string",
-+      "minLength": 1,
-+      "maxLength": 64,
-+      "description": "Human-readable name."
-+    },
-+    "seed": {
-+      "type": "integer",
-+      "minimum": 0,
-+      "maximum": 18446744073709551615,
-+      "description": "Deterministic RNG seed (unsigned 64-bit)."
-+    },
-+    "metadata": {
-+      "type": "object",
-+      "additionalProperties": {
-+        "type": ["string", "number", "integer", "boolean"]
-+      },
-+      "required": ["rng_service"],
-+      "properties": {
-+        "rng_service": {
-+          "type": "string",
-+          "minLength": 1,
-+          "description": "Identifier for the sole RNG provider."
-+        }
-+      },
-+      "description": "Deterministic metadata."
-+    },
-+    "body": {
-+      "type": "object",
-+      "additionalProperties": false,
-+      "required": ["grid", "cells"],
-+      "properties": {
-+        "grid": {
-+          "type": "object",
-+          "additionalProperties": false,
-+          "required": ["width", "height"],
-+          "properties": {
-+            "width": {
-+              "type": "integer",
-+              "minimum": 1,
-+              "description": "Grid width in cells."
-+            },
-+            "height": {
-+              "type": "integer",
-+              "minimum": 1,
-+              "description": "Grid height in cells."
-+            }
-+          }
-+        },
-+        "cells": {
-+          "type": "array",
-+          "minItems": 1,
-+          "items": {
-+            "$ref": "#/$defs/cell"
-+          }
-+        }
-+      }
-+    },
-+    "brain": {
-+      "type": "object",
-+      "additionalProperties": false,
-+      "required": ["cell_count", "input_nodes", "hidden_nodes", "layer_limit", "layers"],
-+      "properties": {
-+        "cell_count": {
-+          "type": "integer",
-+          "minimum": 1,
-+          "description": "Number of brain tissue cells."
-+        },
-+        "input_nodes": {
-+          "type": "integer",
-+          "minimum": 1,
-+          "description": "Neural input node count (must equal brain cell count)."
-+        },
-+        "hidden_nodes": {
-+          "type": "object",
-+          "additionalProperties": false,
-+          "required": ["max", "used"],
-+          "properties": {
-+            "max": {
-+              "type": "integer",
-+              "minimum": 0,
-+              "description": "Maximum hidden nodes budget derived from cell count."
-+            },
-+            "used": {
-+              "type": "integer",
-+              "minimum": 0,
-+              "description": "Currently allocated hidden nodes (energy consumers)."
-+            }
-+          }
-+        },
-+        "layer_limit": {
-+          "type": "integer",
-+          "minimum": 1,
-+          "description": "Maximum hidden layers allowed (floor(cell_count/2))."
-+        },
-+        "layers": {
-+          "type": "object",
-+          "additionalProperties": false,
-+          "required": ["used"],
-+          "properties": {
-+            "used": {
-+              "type": "integer",
-+              "minimum": 1,
-+              "description": "Hidden layer count in use."
-+            }
-+          }
-+        }
-+      }
-+    },
-+    "senses": {
-+      "type": "object",
-+      "additionalProperties": false,
-+      "required": ["vision", "pheromones"],
-+      "properties": {
-+        "vision": {
-+          "type": "object",
-+          "additionalProperties": false,
-+          "required": ["eye_cell_count", "field_of_view_deg", "range_cells", "processing_energy", "clarity_falloff"],
-+          "properties": {
-+            "eye_cell_count": {
-+              "type": "integer",
-+              "minimum": 0,
-+              "description": "Count of eye cells present."
-+            },
-+            "field_of_view_deg": {
-+              "type": "number",
-+              "minimum": 1,
-+              "maximum": 360,
-+              "description": "Horizontal field of view in degrees."
-+            },
-+            "range_cells": {
-+              "type": "integer",
-+              "minimum": 1,
-+              "maximum": 128,
-+              "description": "Vision range in grid cells."
-+            },
-+            "processing_energy": {
-+              "type": "number",
-+              "minimum": 0,
-+              "maximum": 1,
-+              "description": "Fraction of energy budget dedicated to vision processing."
-+            },
-+            "clarity_falloff": {
-+              "type": "number",
-+              "minimum": 0,
-+              "description": "Information degradation per cell of distance."
-+            }
-+          }
-+        },
-+        "pheromones": {
-+          "type": "object",
-+          "additionalProperties": false,
-+          "required": ["pair_count", "processing_energy", "information_focus"],
-+          "properties": {
-+            "pair_count": {
-+              "type": "integer",
-+              "minimum": 0,
-+              "description": "Number of pheromone emitter/receptor pairs."
-+            },
-+            "processing_energy": {
-+              "type": "number",
-+              "minimum": 0,
-+              "maximum": 1,
-+              "description": "Fraction of energy budget for pheromone processing."
-+            },
-+            "information_focus": {
-+              "type": "string",
-+              "enum": ["TrailTracking", "FieldSampling", "BroadcastAnalysis"],
-+              "description": "Chemosensory decoding emphasis."
-+            }
-+          }
-+        }
-+      }
-+    },
-+    "reproduction": {
-+      "type": "object",
-+      "additionalProperties": false,
-+      "required": ["cell_count", "mode", "gestation_ticks", "offspring_energy_ratio"],
-+      "properties": {
-+        "cell_count": {
-+          "type": "integer",
-+          "minimum": 0,
-+          "description": "Count of reproductive cells."
-+        },
-+        "mode": {
-+          "type": "string",
-+          "enum": ["Fast", "Slow"],
-+          "description": "Gestation vs energy trade-off mode."
-+        },
-+        "gestation_ticks": {
-+          "type": "integer",
-+          "minimum": 1,
-+          "description": "Gestation duration in ticks."
-+        },
-+        "offspring_energy_ratio": {
-+          "type": "number",
-+          "minimum": 0,
-+          "maximum": 1,
-+          "description": "Fraction of parent energy allocated per offspring."
-+        }
-+      }
-+    },
-+    "muscles": {
-+      "type": "array",
-+      "items": {
-+        "$ref": "#/$defs/muscle"
-+      }
-+    },
-+    "pheromone_pairs": {
-+      "type": "array",
-+      "items": {
-+        "$ref": "#/$defs/pheromone_pair"
-+      }
-+    },
-+    "nerves": {
-+      "type": "object",
-+      "additionalProperties": false,
-+      "required": ["endings", "cluster_hidden_nodes"],
-+      "properties": {
-+        "endings": {
-+          "type": "array",
-+          "items": {
-+            "$ref": "#/$defs/nerve_ending"
-+          }
-+        },
-+        "cluster_hidden_nodes": {
-+          "type": "array",
-+          "items": {
-+            "$ref": "#/$defs/nerve_cluster"
-+          }
-+        }
-+      }
-+    },
-+    "energy": {
-+      "type": "object",
-+      "additionalProperties": false,
-+      "required": ["vision_share", "movement_share", "pheromone_share", "brain_share"],
-+      "properties": {
-+        "vision_share": { "$ref": "#/$defs/share" },
-+        "movement_share": { "$ref": "#/$defs/share" },
-+        "pheromone_share": { "$ref": "#/$defs/share" },
-+        "brain_share": { "$ref": "#/$defs/share" }
-+      }
-+    },
-+    "fitness_weights": {
-+      "type": "object",
-+      "propertyNames": {
-+        "pattern": "^[a-zA-Z0-9_]+$"
-+      },
-+      "additionalProperties": {
-+        "type": "number",
-+        "minimum": 0,
-+        "maximum": 10
-+      }
-+    }
-+  },
-+  "$defs": {
-+    "coordinate": {
-+      "type": "object",
-+      "additionalProperties": false,
-+      "required": ["row", "col"],
-+      "properties": {
-+        "row": {
-+          "type": "integer",
-+          "minimum": 0
-+        },
-+        "col": {
-+          "type": "integer",
-+          "minimum": 0
-+        }
-+      }
-+    },
-+    "material": {
-+      "type": "object",
-+      "additionalProperties": false,
-+      "required": [
-+        "elasticity",
-+        "flexibility",
-+        "toughness",
-+        "shock_resistance",
-+        "continuous_resistance"
-+      ],
-+      "properties": {
-+        "elasticity": { "$ref": "#/$defs/unit_interval" },
-+        "flexibility": { "$ref": "#/$defs/unit_interval" },
-+        "toughness": { "$ref": "#/$defs/unit_interval" },
-+        "shock_resistance": { "$ref": "#/$defs/unit_interval" },
-+        "continuous_resistance": { "$ref": "#/$defs/unit_interval" }
-+      }
-+    },
-+    "unit_interval": {
-+      "type": "number",
-+      "minimum": 0,
-+      "maximum": 1
-+    },
-+    "cell": {
-+      "type": "object",
-+      "additionalProperties": false,
-+      "required": ["coord", "tissue", "area", "material", "edge_shape"],
-+      "properties": {
-+        "coord": { "$ref": "#/$defs/coordinate" },
-+        "tissue": {
-+          "type": "string",
-+          "enum": [
-+            "Throat",
-+            "Digestive",
-+            "Brain",
-+            "Eye",
-+            "Reproductive",
-+            "MuscleAnchor",
-+            "Fat",
-+            "Skin",
-+            "Armor",
-+            "PheromoneEmitter",
-+            "PheromoneReceptor",
-+            "NerveEnding"
-+          ]
-+        },
-+        "area": {
-+          "type": "number",
-+          "minimum": 0.01,
-+          "maximum": 10
-+        },
-+        "material": { "$ref": "#/$defs/material" },
-+        "edge_shape": {
-+          "type": "string",
-+          "enum": ["Square", "Rounded", "Spiked", "Tapered"]
-+        }
-+      }
-+    },
-+    "muscle": {
-+      "type": "object",
-+      "additionalProperties": false,
-+      "required": [
-+        "id",
-+        "anchor_a",
-+        "anchor_b",
-+        "nerve_ending_coord",
-+        "rest_length_cells",
-+        "width_cells",
-+        "strength_factor",
-+        "energy_cost"
-+      ],
-+      "properties": {
-+        "id": {
-+          "type": "string",
-+          "minLength": 1
-+        },
-+        "anchor_a": { "$ref": "#/$defs/coordinate" },
-+        "anchor_b": { "$ref": "#/$defs/coordinate" },
-+        "nerve_ending_coord": { "$ref": "#/$defs/coordinate" },
-+        "rest_length_cells": {
-+          "type": "number",
-+          "minimum": 1
-+        },
-+        "width_cells": {
-+          "type": "number",
-+          "minimum": 1
-+        },
-+        "strength_factor": {
-+          "type": "number",
-+          "minimum": 0.1
-+        },
-+        "energy_cost": {
-+          "type": "number",
-+          "minimum": 0
-+        }
-+      }
-+    },
-+    "pheromone_pair": {
-+      "type": "object",
-+      "additionalProperties": false,
-+      "required": ["emitter", "receptor"],
-+      "properties": {
-+        "emitter": {
-+          "type": "object",
-+          "additionalProperties": false,
-+          "required": [
-+            "cell_coord",
-+            "specialization_energy",
-+            "length_cells",
-+            "field_shape",
-+            "color_signature",
-+            "amount_per_tick",
-+            "staying_power_ticks"
-+          ],
-+          "properties": {
-+            "cell_coord": { "$ref": "#/$defs/coordinate" },
-+            "specialization_energy": { "$ref": "#/$defs/unit_interval" },
-+            "length_cells": {
-+              "type": "integer",
-+              "minimum": 1,
-+              "maximum": 32
-+            },
-+            "field_shape": {
-+              "type": "string",
-+              "enum": ["Cone", "Sphere", "Trail"]
-+            },
-+            "color_signature": {
-+              "type": "string",
-+              "minLength": 1
-+            },
-+            "amount_per_tick": {
-+              "type": "number",
-+              "minimum": 0
-+            },
-+            "staying_power_ticks": {
-+              "type": "integer",
-+              "minimum": 1
-+            }
-+          }
-+        },
-+        "receptor": {
-+          "type": "object",
-+          "additionalProperties": false,
-+          "required": [
-+            "cell_coord",
-+            "specialization_energy",
-+            "range_cells",
-+            "color_sensitivity",
-+            "sensitivity",
-+            "info_detail"
-+          ],
-+          "properties": {
-+            "cell_coord": { "$ref": "#/$defs/coordinate" },
-+            "specialization_energy": { "$ref": "#/$defs/unit_interval" },
-+            "range_cells": {
-+              "type": "integer",
-+              "minimum": 1,
-+              "maximum": 64
-+            },
-+            "color_sensitivity": {
-+              "type": "string",
-+              "minLength": 1
-+            },
-+            "sensitivity": { "$ref": "#/$defs/unit_interval" },
-+            "info_detail": {
-+              "type": "string",
-+              "enum": ["Low", "Medium", "High"]
-+            }
-+          }
-+        }
-+      }
-+    },
-+    "nerve_ending": {
-+      "type": "object",
-+      "additionalProperties": false,
-+      "required": ["cell_coord", "brain_target", "can_cluster"],
-+      "properties": {
-+        "cell_coord": { "$ref": "#/$defs/coordinate" },
-+        "brain_target": {
-+          "type": "integer",
-+          "minimum": 0
-+        },
-+        "can_cluster": {
-+          "type": "boolean"
-+        }
-+      }
-+    },
-+    "nerve_cluster": {
-+      "type": "object",
-+      "additionalProperties": false,
-+      "required": ["id", "member_coords", "energy_cost"],
-+      "properties": {
-+        "id": {
-+          "type": "string",
-+          "minLength": 1
-+        },
-+        "member_coords": {
-+          "type": "array",
-+          "minItems": 2,
-+          "items": { "$ref": "#/$defs/coordinate" }
-+        },
-+        "energy_cost": {
-+          "type": "number",
-+          "minimum": 0
-+        }
-+      }
-+    },
-+    "share": {
-+      "type": "number",
-+      "minimum": 0,
-+      "maximum": 1
-+    }
-+  }
-+}
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wormworld.example.com/schemas/genome/v0",
+  "title": "WormWorld Genome v0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "id",
+    "name",
+    "seed",
+    "metadata",
+    "body",
+    "brain",
+    "senses",
+    "reproduction",
+    "muscles",
+    "pheromone_pairs",
+    "nerves",
+    "energy",
+    "fitness_weights"
+  ],
+  "properties": {
+    "version": {
+      "const": "v0",
+      "description": "Genome schema version identifier."
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "description": "Unique genome identifier (UUID recommended)."
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "description": "Human-readable name."
+    },
+    "seed": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 18446744073709551615,
+      "description": "Deterministic RNG seed (unsigned 64-bit)."
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": {
+        "type": ["string", "number", "integer", "boolean"]
+      },
+      "required": ["rng_service"],
+      "properties": {
+        "rng_service": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Identifier for the sole RNG provider."
+        }
+      },
+      "description": "Deterministic metadata."
+    },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["grid", "cells"],
+      "properties": {
+        "grid": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["width", "height"],
+          "properties": {
+            "width": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Grid width in cells."
+            },
+            "height": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Grid height in cells."
+            }
+          }
+        },
+        "cells": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/cell"
+          }
+        }
+      }
+    },
+    "brain": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cell_count", "input_nodes", "hidden_nodes", "layer_limit", "layers"],
+      "properties": {
+        "cell_count": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Number of brain tissue cells."
+        },
+        "input_nodes": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Neural input node count (must equal brain cell count)."
+        },
+        "hidden_nodes": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["max", "used"],
+          "properties": {
+            "max": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Maximum hidden nodes budget derived from cell count."
+            },
+            "used": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Currently allocated hidden nodes (energy consumers)."
+            }
+          }
+        },
+        "layer_limit": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Maximum hidden layers allowed (floor(cell_count/2))."
+        },
+        "layers": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["used"],
+          "properties": {
+            "used": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Hidden layer count in use."
+            }
+          }
+        }
+      }
+    },
+    "senses": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["vision", "pheromones"],
+      "properties": {
+        "vision": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["eye_cell_count", "field_of_view_deg", "range_cells", "processing_energy", "clarity_falloff"],
+          "properties": {
+            "eye_cell_count": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Count of eye cells present."
+            },
+            "field_of_view_deg": {
+              "type": "number",
+              "minimum": 1,
+              "maximum": 360,
+              "description": "Horizontal field of view in degrees."
+            },
+            "range_cells": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 128,
+              "description": "Vision range in grid cells."
+            },
+            "processing_energy": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1,
+              "description": "Fraction of energy budget dedicated to vision processing."
+            },
+            "clarity_falloff": {
+              "type": "number",
+              "minimum": 0,
+              "description": "Information degradation per cell of distance."
+            }
+          }
+        },
+        "pheromones": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["pair_count", "processing_energy", "information_focus"],
+          "properties": {
+            "pair_count": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Number of pheromone emitter/receptor pairs."
+            },
+            "processing_energy": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1,
+              "description": "Fraction of energy budget for pheromone processing."
+            },
+            "information_focus": {
+              "type": "string",
+              "enum": ["TrailTracking", "FieldSampling", "BroadcastAnalysis"],
+              "description": "Chemosensory decoding emphasis."
+            }
+          }
+        }
+      }
+    },
+    "reproduction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cell_count", "mode", "gestation_ticks", "offspring_energy_ratio"],
+      "properties": {
+        "cell_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Count of reproductive cells."
+        },
+        "mode": {
+          "type": "string",
+          "enum": ["Fast", "Slow"],
+          "description": "Gestation vs energy trade-off mode."
+        },
+        "gestation_ticks": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Gestation duration in ticks."
+        },
+        "offspring_energy_ratio": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Fraction of parent energy allocated per offspring."
+        }
+      }
+    },
+    "muscles": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/muscle"
+      }
+    },
+    "pheromone_pairs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/pheromone_pair"
+      }
+    },
+    "nerves": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["endings", "cluster_hidden_nodes"],
+      "properties": {
+        "endings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/nerve_ending"
+          }
+        },
+        "cluster_hidden_nodes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/nerve_cluster"
+          }
+        }
+      }
+    },
+    "energy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["vision_share", "movement_share", "pheromone_share", "brain_share"],
+      "properties": {
+        "vision_share": { "$ref": "#/$defs/share" },
+        "movement_share": { "$ref": "#/$defs/share" },
+        "pheromone_share": { "$ref": "#/$defs/share" },
+        "brain_share": { "$ref": "#/$defs/share" }
+      }
+    },
+    "fitness_weights": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[a-zA-Z0-9_]+$"
+      },
+      "additionalProperties": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 10
+      }
+    }
+  },
+  "$defs": {
+    "coordinate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["row", "col"],
+      "properties": {
+        "row": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "col": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "material": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "elasticity",
+        "flexibility",
+        "toughness",
+        "shock_resistance",
+        "continuous_resistance"
+      ],
+      "properties": {
+        "elasticity": { "$ref": "#/$defs/unit_interval" },
+        "flexibility": { "$ref": "#/$defs/unit_interval" },
+        "toughness": { "$ref": "#/$defs/unit_interval" },
+        "shock_resistance": { "$ref": "#/$defs/unit_interval" },
+        "continuous_resistance": { "$ref": "#/$defs/unit_interval" }
+      }
+    },
+    "unit_interval": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "cell": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["coord", "tissue", "area", "material", "edge_shape"],
+      "properties": {
+        "coord": { "$ref": "#/$defs/coordinate" },
+        "tissue": {
+          "type": "string",
+          "enum": [
+            "Throat",
+            "Digestive",
+            "Brain",
+            "Eye",
+            "Reproductive",
+            "MuscleAnchor",
+            "Fat",
+            "Skin",
+            "Armor",
+            "PheromoneEmitter",
+            "PheromoneReceptor",
+            "NerveEnding"
+          ]
+        },
+        "area": {
+          "type": "number",
+          "minimum": 0.01,
+          "maximum": 10
+        },
+        "material": { "$ref": "#/$defs/material" },
+        "edge_shape": {
+          "type": "string",
+          "enum": ["Square", "Rounded", "Spiked", "Tapered"]
+        }
+      }
+    },
+    "muscle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "anchor_a",
+        "anchor_b",
+        "nerve_ending_coord",
+        "rest_length_cells",
+        "width_cells",
+        "strength_factor",
+        "energy_cost"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "anchor_a": { "$ref": "#/$defs/coordinate" },
+        "anchor_b": { "$ref": "#/$defs/coordinate" },
+        "nerve_ending_coord": { "$ref": "#/$defs/coordinate" },
+        "rest_length_cells": {
+          "type": "number",
+          "minimum": 1
+        },
+        "width_cells": {
+          "type": "number",
+          "minimum": 1
+        },
+        "strength_factor": {
+          "type": "number",
+          "minimum": 0.1
+        },
+        "energy_cost": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "pheromone_pair": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["emitter", "receptor"],
+      "properties": {
+        "emitter": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "cell_coord",
+            "specialization_energy",
+            "length_cells",
+            "field_shape",
+            "color_signature",
+            "amount_per_tick",
+            "staying_power_ticks"
+          ],
+          "properties": {
+            "cell_coord": { "$ref": "#/$defs/coordinate" },
+            "specialization_energy": { "$ref": "#/$defs/unit_interval" },
+            "length_cells": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 32
+            },
+            "field_shape": {
+              "type": "string",
+              "enum": ["Cone", "Sphere", "Trail"]
+            },
+            "color_signature": {
+              "type": "string",
+              "minLength": 1
+            },
+            "amount_per_tick": {
+              "type": "number",
+              "minimum": 0
+            },
+            "staying_power_ticks": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        "receptor": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "cell_coord",
+            "specialization_energy",
+            "range_cells",
+            "color_sensitivity",
+            "sensitivity",
+            "info_detail"
+          ],
+          "properties": {
+            "cell_coord": { "$ref": "#/$defs/coordinate" },
+            "specialization_energy": { "$ref": "#/$defs/unit_interval" },
+            "range_cells": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 64
+            },
+            "color_sensitivity": {
+              "type": "string",
+              "minLength": 1
+            },
+            "sensitivity": { "$ref": "#/$defs/unit_interval" },
+            "info_detail": {
+              "type": "string",
+              "enum": ["Low", "Medium", "High"]
+            }
+          }
+        }
+      }
+    },
+    "nerve_ending": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cell_coord", "brain_target", "can_cluster"],
+      "properties": {
+        "cell_coord": { "$ref": "#/$defs/coordinate" },
+        "brain_target": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "can_cluster": {
+          "type": "boolean"
+        }
+      }
+    },
+    "nerve_cluster": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "member_coords", "energy_cost"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "member_coords": {
+          "type": "array",
+          "minItems": 2,
+          "items": { "$ref": "#/$defs/coordinate" }
+        },
+        "energy_cost": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "share": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    }
+  }
+}
