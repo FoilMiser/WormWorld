@@ -1,0 +1,12 @@
+<Project>
+  <PropertyGroup>
+    <_WormWorldRoot Condition="'$(SolutionDir)' != ''">$(SolutionDir)</_WormWorldRoot>
+    <_WormWorldRoot Condition="'$(_WormWorldRoot)' == ''">$(MSBuildThisFileDirectory)..\..\..\</_WormWorldRoot>
+  </PropertyGroup>
+
+  <ItemGroup Condition="Exists('$(_WormWorldRoot)Data\schemas\genome.schema.json')">
+    <AdditionalFiles Include="$(_WormWorldRoot)Data\schemas\genome.schema.json">
+      <Link>genome.schema.json</Link>
+    </AdditionalFiles>
+  </ItemGroup>
+</Project>
