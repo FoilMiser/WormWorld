@@ -78,11 +78,6 @@ namespace WormWorld.Genome
         /// JSON encoded per-objective fitness weights.
         /// </summary>
         public string FitnessJson { get; set; }
-
-        /// <summary>
-        /// Optional placeholder fitness value populated before deterministic simulation runs (0-1 range recommended).
-        /// </summary>
-        public double? PreEvalFitness { get; set; }
     }
 
     /// <summary>

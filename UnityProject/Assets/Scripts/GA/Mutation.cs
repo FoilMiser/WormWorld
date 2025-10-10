@@ -1,7 +1,6 @@
 using System;
+using System.Collections.Generic;
 using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
-using System.Linq;
 using WormWorld.Genome;
 
 namespace WormWorld.GA
@@ -62,38 +61,32 @@ namespace WormWorld.GA
                 return;
             }
 
-            var array = ParseArray(genome.MusclesJson);
-            if (array == null || array.Count == 0)
+            var muscles = JsonConvert.DeserializeObject<List<MusclePayload>>(genome.MusclesJson, SerializerSettings);
+            if (muscles == null || muscles.Count == 0)
             {
                 return;
             }
 
             var changed = false;
-            foreach (var muscle in array.OfType<JObject>())
+            foreach (var muscle in muscles)
             {
-                var currentStrength = muscle.Value<double?>("strength_factor");
-                if (currentStrength == null)
-                {
-                    continue;
-                }
-
                 if (!rng.NextBool(config.MuscleMutationRate))
                 {
                     continue;
                 }
 
                 var jitter = rng.NextSymmetric(config.StrengthFactorJitter);
-                var next = Clamp(currentStrength.Value + jitter, StrengthFactorMinimum, config.MaxStrengthFactor);
-                if (Math.Abs(next - currentStrength.Value) > double.Epsilon)
+                var next = Clamp(muscle.StrengthFactor + jitter, StrengthFactorMinimum, config.MaxStrengthFactor);
+                if (Math.Abs(next - muscle.StrengthFactor) > double.Epsilon)
                 {
-                    muscle["strength_factor"] = next;
+                    muscle.StrengthFactor = next;
                     changed = true;
                 }
             }
 
             if (changed)
             {
-                genome.MusclesJson = CanonicalizeToken(array);
+                genome.MusclesJson = Canonicalize(muscles);
             }
         }
 
@@ -194,8 +187,8 @@ namespace WormWorld.GA
                 return;
             }
 
-            var array = ParseArray(genome.PheromonesJson);
-            if (array == null || array.Count == 0)
+            var pairs = JsonConvert.DeserializeObject<List<PheromonePairPayload>>(genome.PheromonesJson, SerializerSettings);
+            if (pairs == null || pairs.Count == 0)
             {
                 return;
             }
@@ -205,27 +198,15 @@ namespace WormWorld.GA
                 return;
             }
 
-            var index = rng.NextInt(0, array.Count);
-            if (array[index] is not JObject pair)
-            {
-                return;
-            }
-
-            var emitter = pair["emitter"] as JObject;
-            var receptor = pair["receptor"] as JObject;
-            if (emitter == null || receptor == null)
-            {
-                return;
-            }
-
-            var currentEnergy = emitter.Value<double?>("specialization_energy") ?? 0.0;
-            var currentlyEnabled = currentEnergy > config.PheromoneDisableThreshold;
+            var index = rng.NextInt(0, pairs.Count);
+            var pair = pairs[index];
+            var currentlyEnabled = pair.Emitter.SpecializationEnergy > config.PheromoneDisableThreshold;
             var targetEnergy = currentlyEnabled ? 0.0 : Clamp01(config.PheromoneEnableValue);
 
-            emitter["specialization_energy"] = targetEnergy;
-            receptor["specialization_energy"] = targetEnergy;
+            pair.Emitter.SpecializationEnergy = targetEnergy;
+            pair.Receptor.SpecializationEnergy = targetEnergy;
 
-            genome.PheromonesJson = CanonicalizeToken(array);
+            genome.PheromonesJson = Canonicalize(pairs);
         }
 
         private static void MutateMaterials(Genome.Genome genome, GAConfig config, DeterministicRng rng)
@@ -235,55 +216,41 @@ namespace WormWorld.GA
                 return;
             }
 
-            var body = ParseObject(genome.BodyJson);
-            var cells = body?["cells"] as JArray;
-            if (cells == null || cells.Count == 0)
+            var body = JsonConvert.DeserializeObject<BodyPayload>(genome.BodyJson, SerializerSettings);
+            if (body == null || body.Cells == null || body.Cells.Count == 0)
             {
                 return;
             }
 
             var changed = false;
-            foreach (var cell in cells.OfType<JObject>())
+            foreach (var cell in body.Cells)
             {
+                if (cell.Material == null)
+                {
+                    continue;
+                }
+
                 if (!rng.NextBool(config.MaterialMutationRate))
                 {
                     continue;
                 }
 
-                var material = cell["material"] as JObject;
-                if (material == null)
-                {
-                    continue;
-                }
-
-                var elasticity = material.Value<double?>("elasticity") ?? 0.0;
-                var toughness = material.Value<double?>("toughness") ?? 0.0;
-
-                var nextElasticity = Clamp01(elasticity + rng.NextSymmetric(config.MaterialNudge));
-                var nextToughness = Clamp01(toughness + rng.NextSymmetric(config.MaterialNudge));
-
-                if (Math.Abs(nextElasticity - elasticity) < double.Epsilon &&
-                    Math.Abs(nextToughness - toughness) < double.Epsilon)
-                {
-                    continue;
-                }
-
-                material["elasticity"] = nextElasticity;
-                material["toughness"] = nextToughness;
+                cell.Material.Elasticity = Clamp01(cell.Material.Elasticity + rng.NextSymmetric(config.MaterialNudge));
+                cell.Material.Toughness = Clamp01(cell.Material.Toughness + rng.NextSymmetric(config.MaterialNudge));
                 changed = true;
             }
 
             if (changed)
             {
-                genome.BodyJson = CanonicalizeToken(body);
+                genome.BodyJson = Canonicalize(body);
             }
         }
 
-        private static string CanonicalizeToken(JToken token) => GenomeIO.CanonicalizeSection(token.ToString(Formatting.None));
-
-        private static JArray? ParseArray(string json) => string.IsNullOrWhiteSpace(json) ? null : JArray.Parse(json);
-
-        private static JObject? ParseObject(string json) => string.IsNullOrWhiteSpace(json) ? null : JObject.Parse(json);
+        private static string Canonicalize<T>(T value)
+        {
+            var json = JsonConvert.SerializeObject(value, SerializerSettings);
+            return GenomeIO.CanonicalizeSection(json);
+        }
 
         private static double Clamp(double value, double min, double max)
         {
@@ -328,6 +295,27 @@ namespace WormWorld.GA
             }
 
             return value;
+        }
+
+        private class BodyPayload
+        {
+            [JsonProperty("cells")]
+            public List<CellPayload>? Cells { get; set; }
+        }
+
+        private class CellPayload
+        {
+            [JsonProperty("material")]
+            public MaterialPayload? Material { get; set; }
+        }
+
+        private class MaterialPayload
+        {
+            [JsonProperty("elasticity")]
+            public double Elasticity { get; set; }
+
+            [JsonProperty("toughness")]
+            public double Toughness { get; set; }
         }
 
         private class BrainPayload
@@ -384,5 +372,31 @@ namespace WormWorld.GA
             public double ClarityFalloff { get; set; }
         }
 
+        private class PheromonePairPayload
+        {
+            [JsonProperty("emitter")]
+            public PheromoneEmitterPayload Emitter { get; set; } = new PheromoneEmitterPayload();
+
+            [JsonProperty("receptor")]
+            public PheromoneReceptorPayload Receptor { get; set; } = new PheromoneReceptorPayload();
+        }
+
+        private class PheromoneEmitterPayload
+        {
+            [JsonProperty("specialization_energy")]
+            public double SpecializationEnergy { get; set; }
+        }
+
+        private class PheromoneReceptorPayload
+        {
+            [JsonProperty("specialization_energy")]
+            public double SpecializationEnergy { get; set; }
+        }
+
+        private class MusclePayload
+        {
+            [JsonProperty("strength_factor")]
+            public double StrengthFactor { get; set; }
+        }
     }
 }
