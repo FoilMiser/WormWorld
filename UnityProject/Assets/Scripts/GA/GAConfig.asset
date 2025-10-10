@@ -1,0 +1,30 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a9f5b2d9c495444c9a3c8e88d64b7b54, type: 3}
+  m_Name: GAConfig
+  m_EditorClassIdentifier: 
+  Seed: 1
+  Generations: 10
+  TournamentSize: 3
+  MuscleMutationRate: 0.35
+  HiddenNodeMutationRate: 0.25
+  VisionMutationRate: 0.5
+  PheromoneToggleProbability: 0.15
+  MaterialMutationRate: 0.2
+  StrengthFactorJitter: 0.25
+  MaxStrengthFactor: 5
+  VisionTradeoffStep: 0.05
+  VisionEnergyStep: 0.05
+  VisionClarityStep: 0.02
+  PheromoneEnableValue: 0.5
+  PheromoneDisableThreshold: 0.05
+  MaterialNudge: 0.05
