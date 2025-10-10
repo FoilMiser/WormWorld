@@ -7,7 +7,6 @@
 1.4 **Metadata**: `metadata` SHALL be an object with, at minimum, `rng_service` (string identifier of the deterministic RNG provider). Additional metadata entries are optional but MUST be deterministic constants.
 1.5 **Deterministic Operations**: No RNG use is permitted outside the named RNG service; mutations must obtain randomness exclusively from that service using the stored `seed`.
 1.6 **Serialization**: Compact CSV rows compress nested sections as JSON strings (see §8). Expanded JSON/JSONL MUST respect the JSON Schema in `Data/schemas/genome.schema.json`.
-1.7 **Offline Fitness**: The CSV format MAY include `pre_eval_fitness` (0–1 float) to cache deterministic placeholder scores for offline GA runs. When present, this value mirrors the optional `pre_eval_fitness` field in expanded JSON.
 
 ## 2. Body Grid and Cells
 2.1 **Grid Dimensions**: `body.grid.width` and `body.grid.height` are positive integers (units: cells). They define CSV-style coordinates `(row, column)` with 0-based indices.
@@ -112,7 +111,7 @@
 ## 11. Serialization for CSV
 11.1 CSV headers include atomic fields directly; nested objects appear as JSON strings with `_json` suffix (`cells_json`, `brain_json`, etc.).
 11.2 Expanded JSONL mirrors the schema exactly, with all arrays/objects fully materialized.
-11.3 The canonical column order for v0 is: `version,id,name,seed,metadata_json,body_json,brain_json,senses_json,reproduction_json,muscles_json,pheromones_json,nerves_json,energy_json,fitness_json,pre_eval_fitness`.
+11.3 The canonical column order for v0 is: `version,id,name,seed,metadata_json,body_json,brain_json,senses_json,reproduction_json,muscles_json,pheromones_json,nerves_json,energy_json,fitness_json`.
 
 ## 12. Mutation Governance
 12.1 Mutations MUST respect deterministic metadata and the RNG constraint.

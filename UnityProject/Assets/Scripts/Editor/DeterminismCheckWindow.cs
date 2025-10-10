@@ -166,8 +166,7 @@ namespace WormWorld.EditorTools
             var builder = new StringBuilder();
             foreach (var line in canonicalJson)
             {
-                var normalized = JsonCompat.Normalize(line);
-                builder.AppendLine(normalized);
+                builder.AppendLine(line);
             }
 
             var bytes = Encoding.UTF8.GetBytes(builder.ToString());

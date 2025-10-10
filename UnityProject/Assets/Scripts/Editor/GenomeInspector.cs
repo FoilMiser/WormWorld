@@ -3,8 +3,8 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
+using System.Text;
+using System.Text.Json;
 using UnityEditor;
 using UnityEngine;
 using WormWorld.Genome;
@@ -214,11 +214,14 @@ namespace WormWorld.EditorTools
                 return null;
             }
 
-            var token = JToken.Parse(genome.BrainJson);
-            var countToken = token["brain_cell_count"];
-            return countToken != null && countToken.Type != JTokenType.Null
-                ? countToken.Value<int?>()
-                : null;
+            using var document = JsonDocument.Parse(genome.BrainJson);
+            if (document.RootElement.TryGetProperty("brain_cell_count", out var countElement) &&
+                countElement.ValueKind == JsonValueKind.Number)
+            {
+                return countElement.GetInt32();
+            }
+
+            return null;
         }
 
         private string GetPrettyJson(string rawJson)
@@ -230,12 +233,18 @@ namespace WormWorld.EditorTools
 
             try
             {
-                var token = JToken.Parse(rawJson);
-                var pretty = token.ToString(Formatting.Indented);
+                using var document = JsonDocument.Parse(rawJson);
+                using var builder = new MemoryStream();
+                using (var writer = new Utf8JsonWriter(builder, new JsonWriterOptions { Indented = true }))
+                {
+                    document.WriteTo(writer);
+                }
+
+                var pretty = Encoding.UTF8.GetString(builder.ToArray());
                 _prettyPrintCache[rawJson] = pretty;
                 return pretty;
             }
-            catch (JsonReaderException)
+            catch (JsonException)
             {
                 _prettyPrintCache[rawJson] = rawJson;
                 return rawJson;

@@ -5,9 +5,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
-using System.Text.RegularExpressions;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
+using System.Text.Json;
 
 namespace WormWorld.Genome
 {
@@ -31,8 +29,7 @@ namespace WormWorld.Genome
             "pheromones_json",
             "nerves_json",
             "energy_json",
-            "fitness_json",
-            "pre_eval_fitness"
+            "fitness_json"
         };
 
         private static readonly object SchemaLock = new object();
@@ -99,7 +96,7 @@ namespace WormWorld.Genome
             var genomes = new List<Genome>();
             using (var reader = new StreamReader(File.OpenRead(csvPath)))
             {
-                string headerLine = reader.ReadLine();
+                string? headerLine = reader.ReadLine();
                 if (headerLine == null)
                 {
                     return genomes;
@@ -133,7 +130,7 @@ namespace WormWorld.Genome
                         var genome = CreateGenomeFromRow(headers, fields);
                         genomes.Add(genome);
                     }
-                    catch (Exception ex) when (ex is InvalidDataException || ex is JsonReaderException || ex is FormatException || ex is OverflowException)
+                    catch (Exception ex) when (ex is InvalidDataException || ex is JsonException || ex is FormatException || ex is OverflowException)
                     {
                         throw new InvalidDataException($"Failed to parse genome CSV row {rowIndex}: {ex.Message}", ex);
                     }
@@ -201,31 +198,29 @@ namespace WormWorld.Genome
 
                 try
                 {
-                    var root = JObject.Parse(line);
+                    using var document = JsonDocument.Parse(line);
+                    var root = document.RootElement;
                     var genome = new Genome
                     {
-                        Version = root.Value<string>("version") ?? string.Empty,
-                        Id = root.Value<string>("id") ?? string.Empty,
-                        Name = root.Value<string>("name") ?? string.Empty,
-                        Seed = root.Value<ulong?>("seed") ?? 0UL,
-                        MetadataJson = CanonicalizeToken(root["metadata"], "metadata"),
-                        BodyJson = CanonicalizeToken(root["body"], "body"),
-                        BrainJson = CanonicalizeToken(root["brain"], "brain"),
-                        SensesJson = CanonicalizeToken(root["senses"], "senses"),
-                        ReproductionJson = CanonicalizeToken(root["reproduction"], "reproduction"),
-                        MusclesJson = CanonicalizeToken(root["muscles"], "muscles"),
-                        PheromonesJson = CanonicalizeToken(root["pheromone_pairs"], "pheromone_pairs"),
-                        NervesJson = CanonicalizeToken(root["nerves"], "nerves"),
-                        EnergyJson = CanonicalizeToken(root["energy"], "energy"),
-                        FitnessJson = CanonicalizeToken(root["fitness_weights"], "fitness_weights"),
-                        PreEvalFitness = root.TryGetValue("pre_eval_fitness", StringComparison.Ordinal, out var preEvalToken)
-                            ? (preEvalToken.Type == JTokenType.Null ? (double?)null : preEvalToken.Value<double>())
-                            : null
+                        Version = root.TryGetProperty("version", out var versionElement) ? versionElement.GetString() ?? string.Empty : string.Empty,
+                        Id = root.TryGetProperty("id", out var idElement) ? idElement.GetString() ?? string.Empty : string.Empty,
+                        Name = root.TryGetProperty("name", out var nameElement) ? nameElement.GetString() ?? string.Empty : string.Empty,
+                        Seed = root.TryGetProperty("seed", out var seedElement) ? seedElement.GetUInt64() : 0UL,
+                        MetadataJson = Canonicalize(root.GetProperty("metadata")),
+                        BodyJson = Canonicalize(root.GetProperty("body")),
+                        BrainJson = Canonicalize(root.GetProperty("brain")),
+                        SensesJson = Canonicalize(root.GetProperty("senses")),
+                        ReproductionJson = Canonicalize(root.GetProperty("reproduction")),
+                        MusclesJson = Canonicalize(root.GetProperty("muscles")),
+                        PheromonesJson = Canonicalize(root.GetProperty("pheromone_pairs")),
+                        NervesJson = Canonicalize(root.GetProperty("nerves")),
+                        EnergyJson = Canonicalize(root.GetProperty("energy")),
+                        FitnessJson = Canonicalize(root.GetProperty("fitness_weights"))
                     };
 
                     genomes.Add(genome);
                 }
-                catch (Exception ex) when (ex is JsonReaderException || ex is InvalidDataException || ex is KeyNotFoundException)
+                catch (Exception ex) when (ex is JsonException || ex is InvalidDataException || ex is KeyNotFoundException)
                 {
                     throw new InvalidDataException($"Failed to parse JSONL line {lineNumber}: {ex.Message}", ex);
                 }
@@ -301,10 +296,7 @@ namespace WormWorld.Genome
                     pheromones,
                     nerves,
                     energy,
-                    fitness,
-                    genome.PreEvalFitness.HasValue
-                        ? genome.PreEvalFitness.Value.ToString(CultureInfo.InvariantCulture)
-                        : string.Empty
+                    fitness
                 };
 
                 writer.WriteLine(string.Join(",", fields.Select(EscapeCsvField)));
@@ -324,9 +316,8 @@ namespace WormWorld.Genome
 
             var schemaPath = SchemaPath;
             var validator = GetValidator(schemaPath);
-            var canonical = ToCanonicalJson(genome);
-            var token = JToken.Parse(canonical);
-            var errors = validator.Validate(token);
+            using var document = JsonDocument.Parse(ToCanonicalJson(genome));
+            var errors = validator.Validate(document.RootElement);
             if (errors.Count > 0)
             {
                 throw new SchemaValidationException(schemaPath, errors);
@@ -345,46 +336,31 @@ namespace WormWorld.Genome
                 throw new ArgumentNullException(nameof(genome));
             }
 
-            var root = new JObject
+            using var stream = new MemoryStream();
+            using (var writer = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = false }))
             {
-                ["version"] = genome.Version ?? "v0",
-                ["id"] = genome.Id ?? string.Empty,
-                ["name"] = genome.Name ?? string.Empty,
-                ["seed"] = genome.Seed
-            };
+                writer.WriteStartObject();
+                writer.WriteString("version", genome.Version ?? "v0");
+                writer.WriteString("id", genome.Id ?? string.Empty);
+                writer.WriteString("name", genome.Name ?? string.Empty);
+                writer.WritePropertyName("seed");
+                writer.WriteNumberValue(genome.Seed);
 
-            root["metadata"] = ParseSection(genome.MetadataJson, "metadata_json");
-            root["body"] = ParseSection(genome.BodyJson, "body_json");
-            root["brain"] = ParseSection(genome.BrainJson, "brain_json");
-            root["senses"] = ParseSection(genome.SensesJson, "senses_json");
-            root["reproduction"] = ParseSection(genome.ReproductionJson, "reproduction_json");
-            root["muscles"] = ParseSection(genome.MusclesJson, "muscles_json");
-            root["pheromone_pairs"] = ParseSection(genome.PheromonesJson, "pheromones_json");
-            root["nerves"] = ParseSection(genome.NervesJson, "nerves_json");
-            root["energy"] = ParseSection(genome.EnergyJson, "energy_json");
-            root["fitness_weights"] = ParseSection(genome.FitnessJson, "fitness_json");
+                WriteJsonProperty(writer, "metadata", genome.MetadataJson, "metadata_json");
+                WriteJsonProperty(writer, "body", genome.BodyJson, "body_json");
+                WriteJsonProperty(writer, "brain", genome.BrainJson, "brain_json");
+                WriteJsonProperty(writer, "senses", genome.SensesJson, "senses_json");
+                WriteJsonProperty(writer, "reproduction", genome.ReproductionJson, "reproduction_json");
+                WriteJsonProperty(writer, "muscles", genome.MusclesJson, "muscles_json");
+                WriteJsonProperty(writer, "pheromone_pairs", genome.PheromonesJson, "pheromones_json");
+                WriteJsonProperty(writer, "nerves", genome.NervesJson, "nerves_json");
+                WriteJsonProperty(writer, "energy", genome.EnergyJson, "energy_json");
+                WriteJsonProperty(writer, "fitness_weights", genome.FitnessJson, "fitness_json");
 
-            if (genome.PreEvalFitness.HasValue)
-            {
-                root["pre_eval_fitness"] = genome.PreEvalFitness.Value;
+                writer.WriteEndObject();
             }
 
-            return JsonCompat.Normalize(root.ToString(Formatting.None));
-        }
-
-        /// <summary>
-        /// Canonicalizes an inline JSON fragment using the genome canonical ordering rules.
-        /// </summary>
-        /// <param name="json">JSON text to normalize.</param>
-        /// <returns>Canonical JSON string.</returns>
-        public static string CanonicalizeSection(string json)
-        {
-            if (json == null)
-            {
-                throw new ArgumentNullException(nameof(json));
-            }
-
-            return CanonicalizeJsonString(json, "inline_fragment");
+            return Encoding.UTF8.GetString(stream.ToArray());
         }
 
         private static Genome CreateGenomeFromRow(IReadOnlyList<string> headers, IReadOnlyList<string> fields)
@@ -439,11 +415,6 @@ namespace WormWorld.Genome
                         break;
                     case "fitness_json":
                         genome.FitnessJson = CanonicalizeJsonString(value, header);
-                        break;
-                    case "pre_eval_fitness":
-                        genome.PreEvalFitness = string.IsNullOrWhiteSpace(value)
-                            ? (double?)null
-                            : double.Parse(value, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture);
                         break;
                 }
             }
@@ -536,7 +507,14 @@ namespace WormWorld.Genome
             return builder.ToString();
         }
 
-        private static string CanonicalizeJsonString(string json, string columnName)
+        private static void WriteJsonProperty(Utf8JsonWriter writer, string propertyName, string json, string columnName)
+        {
+            writer.WritePropertyName(propertyName);
+            using var document = ParseJsonDocument(json, columnName);
+            WriteCanonicalElement(document.RootElement, writer);
+        }
+
+        private static JsonDocument ParseJsonDocument(string json, string columnName)
         {
             if (string.IsNullOrWhiteSpace(json))
             {
@@ -545,28 +523,88 @@ namespace WormWorld.Genome
 
             try
             {
-                return JsonCompat.Normalize(json);
+                return JsonDocument.Parse(json);
             }
-            catch (JsonReaderException ex)
+            catch (JsonException ex)
             {
                 throw new InvalidDataException($"Column {columnName} contains invalid JSON: {ex.Message}", ex);
             }
         }
 
-        private static string CanonicalizeToken(JToken token, string propertyName)
+        private static string CanonicalizeJsonString(string json, string columnName)
         {
-            if (token == null)
-            {
-                throw new KeyNotFoundException($"Property '{propertyName}' is missing.");
-            }
-
-            return JsonCompat.Normalize(token.ToString(Formatting.None));
+            using var document = ParseJsonDocument(json, columnName);
+            return Canonicalize(document.RootElement);
         }
 
-        private static JToken ParseSection(string json, string columnName)
+        private static string Canonicalize(JsonElement element)
         {
-            var normalized = CanonicalizeJsonString(json, columnName);
-            return JToken.Parse(normalized);
+            using var stream = new MemoryStream();
+            using (var writer = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = false }))
+            {
+                WriteCanonicalElement(element, writer);
+            }
+
+            return Encoding.UTF8.GetString(stream.ToArray());
+        }
+
+        private static void WriteCanonicalElement(JsonElement element, Utf8JsonWriter writer)
+        {
+            switch (element.ValueKind)
+            {
+                case JsonValueKind.Object:
+                    writer.WriteStartObject();
+                    foreach (var property in element.EnumerateObject().OrderBy(p => p.Name, StringComparer.Ordinal))
+                    {
+                        writer.WritePropertyName(property.Name);
+                        WriteCanonicalElement(property.Value, writer);
+                    }
+
+                    writer.WriteEndObject();
+                    break;
+                case JsonValueKind.Array:
+                    writer.WriteStartArray();
+                    foreach (var item in element.EnumerateArray())
+                    {
+                        WriteCanonicalElement(item, writer);
+                    }
+
+                    writer.WriteEndArray();
+                    break;
+                case JsonValueKind.String:
+                    writer.WriteStringValue(element.GetString());
+                    break;
+                case JsonValueKind.Number:
+                    if (element.TryGetInt64(out var intValue))
+                    {
+                        writer.WriteNumberValue(intValue);
+                    }
+                    else if (element.TryGetUInt64(out var unsignedValue))
+                    {
+                        writer.WriteNumberValue(unsignedValue);
+                    }
+                    else if (element.TryGetDecimal(out var decimalValue))
+                    {
+                        writer.WriteNumberValue(decimalValue);
+                    }
+                    else
+                    {
+                        writer.WriteNumberValue(element.GetDouble());
+                    }
+
+                    break;
+                case JsonValueKind.True:
+                    writer.WriteBooleanValue(true);
+                    break;
+                case JsonValueKind.False:
+                    writer.WriteBooleanValue(false);
+                    break;
+                case JsonValueKind.Null:
+                    writer.WriteNullValue();
+                    break;
+                default:
+                    throw new NotSupportedException($"Unsupported JSON value kind: {element.ValueKind}.");
+            }
         }
 
         private static SimpleJsonSchemaValidator GetValidator(string schemaPath)
@@ -578,7 +616,7 @@ namespace WormWorld.Genome
                     return cached;
                 }
 
-                var document = JToken.Parse(File.ReadAllText(schemaPath));
+                var document = JsonDocument.Parse(File.ReadAllText(schemaPath));
                 var validator = new SimpleJsonSchemaValidator(document);
                 ValidatorCache[schemaPath] = validator;
                 return validator;
@@ -587,237 +625,199 @@ namespace WormWorld.Genome
 
         private sealed class SimpleJsonSchemaValidator
         {
-            private readonly JToken _schemaDocument;
+            private readonly JsonDocument _schemaDocument;
 
-            public SimpleJsonSchemaValidator(JToken schemaDocument)
+            public SimpleJsonSchemaValidator(JsonDocument schemaDocument)
             {
                 _schemaDocument = schemaDocument ?? throw new ArgumentNullException(nameof(schemaDocument));
             }
 
-            public IReadOnlyList<string> Validate(JToken instance)
+            public IReadOnlyList<string> Validate(JsonElement instance)
             {
                 var errors = new List<string>();
-                ValidateElement(_schemaDocument, instance, "$", errors);
+                ValidateElement(_schemaDocument.RootElement, instance, "$", errors);
                 return errors;
             }
 
-            private void ValidateElement(JToken schema, JToken instance, string path, List<string> errors)
+            private void ValidateElement(JsonElement schema, JsonElement instance, string path, List<string> errors)
             {
-                if (schema is JObject schemaObject)
+                if (schema.TryGetProperty("$ref", out var refElement))
                 {
-                    if (schemaObject.TryGetValue("$ref", out var refToken))
+                    var resolved = ResolveReference(refElement.GetString() ?? string.Empty);
+                    ValidateElement(resolved, instance, path, errors);
+                    return;
+                }
+
+                if (schema.TryGetProperty("type", out var typeElement))
+                {
+                    if (!IsTypeAllowed(typeElement, instance))
                     {
-                        var resolved = ResolveReference(refToken?.Value<string>() ?? string.Empty);
-                        ValidateElement(resolved, instance, path, errors);
+                        errors.Add($"{path}: expected type {DescribeType(typeElement)} but found {DescribeInstance(instance)}");
                         return;
                     }
+                }
 
-                    if (schemaObject.TryGetValue("type", out var typeDefinition))
+                if (schema.TryGetProperty("const", out var constElement))
+                {
+                    if (!JsonEquals(constElement, instance))
                     {
-                        if (!IsTypeAllowed(typeDefinition, instance))
-                        {
-                            errors.Add($"{path}: expected type {DescribeType(typeDefinition)} but found {DescribeInstance(instance)}");
-                            return;
-                        }
+                        errors.Add($"{path}: expected constant {constElement.GetRawText()} but found {instance.GetRawText()}");
                     }
+                }
 
-                    if (schemaObject.TryGetValue("const", out var constToken))
+                if (schema.TryGetProperty("enum", out var enumElement) && enumElement.ValueKind == JsonValueKind.Array)
+                {
+                    var isMatch = enumElement.EnumerateArray().Any(option => JsonEquals(option, instance));
+                    if (!isMatch)
                     {
-                        if (!JsonEquals(constToken, instance))
-                        {
-                            errors.Add($"{path}: expected constant {constToken.ToString(Formatting.None)} but found {instance.ToString(Formatting.None)}");
-                        }
+                        errors.Add($"{path}: value {instance.GetRawText()} is not permitted");
                     }
+                }
 
-                    if (schemaObject.TryGetValue("enum", out var enumToken) && enumToken is JArray enumArray)
-                    {
-                        var isMatch = enumArray.Any(option => JsonEquals(option, instance));
-                        if (!isMatch)
-                        {
-                            errors.Add($"{path}: value {instance.ToString(Formatting.None)} is not permitted");
-                        }
-                    }
-
-                    switch (instance.Type)
-                    {
-                        case JTokenType.Object:
-                            ValidateObject(schemaObject, (JObject)instance, path, errors);
-                            break;
-                        case JTokenType.Array:
-                            ValidateArray(schemaObject, (JArray)instance, path, errors);
-                            break;
-                        case JTokenType.String:
-                            ValidateString(schemaObject, instance, path, errors);
-                            break;
-                        case JTokenType.Integer:
-                        case JTokenType.Float:
-                            ValidateNumber(schemaObject, instance, path, errors);
-                            break;
-                    }
+                switch (instance.ValueKind)
+                {
+                    case JsonValueKind.Object:
+                        ValidateObject(schema, instance, path, errors);
+                        break;
+                    case JsonValueKind.Array:
+                        ValidateArray(schema, instance, path, errors);
+                        break;
+                    case JsonValueKind.String:
+                        ValidateString(schema, instance, path, errors);
+                        break;
+                    case JsonValueKind.Number:
+                        ValidateNumber(schema, instance, path, errors);
+                        break;
                 }
             }
 
-            private void ValidateObject(JObject schema, JObject instance, string path, List<string> errors)
+            private void ValidateObject(JsonElement schema, JsonElement instance, string path, List<string> errors)
             {
-                if (schema.TryGetValue("required", out var requiredToken) && requiredToken is JArray requiredArray)
+                if (schema.TryGetProperty("required", out var requiredElement) && requiredElement.ValueKind == JsonValueKind.Array)
                 {
-                    var required = requiredArray.Values<string?>().Where(v => !string.IsNullOrEmpty(v)).ToArray();
+                    var required = requiredElement.EnumerateArray().Select(p => p.GetString()).Where(p => !string.IsNullOrEmpty(p)).ToArray();
                     foreach (var property in required)
                     {
-                        if (property != null && instance.Property(property) == null)
+                        if (!instance.TryGetProperty(property!, out _))
                         {
                             errors.Add($"{path}: required property '{property}' is missing");
                         }
                     }
                 }
 
-                Dictionary<string, JToken> propertySchemas = null;
-                if (schema.TryGetValue("properties", out var propertiesToken) && propertiesToken is JObject propertiesObject)
+                Dictionary<string, JsonElement>? propertySchemas = null;
+                if (schema.TryGetProperty("properties", out var propertiesElement) && propertiesElement.ValueKind == JsonValueKind.Object)
                 {
-                    propertySchemas = new Dictionary<string, JToken>(StringComparer.Ordinal);
-                    foreach (var property in propertiesObject.Properties())
+                    propertySchemas = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+                    foreach (var property in propertiesElement.EnumerateObject())
                     {
                         propertySchemas[property.Name] = property.Value;
                     }
                 }
 
+                var hasAdditionalSchema = false;
                 var additionalAllowed = true;
-                JToken additionalSchema = null;
-                if (schema.TryGetValue("additionalProperties", out var additionalToken))
+                JsonElement additionalSchema = default;
+                if (schema.TryGetProperty("additionalProperties", out var additionalElement))
                 {
-                    if (additionalToken.Type == JTokenType.Boolean)
+                    if (additionalElement.ValueKind == JsonValueKind.False)
                     {
-                        additionalAllowed = additionalToken.Value<bool>();
+                        additionalAllowed = false;
                     }
-                    else
+                    else if (additionalElement.ValueKind == JsonValueKind.Object)
                     {
-                        additionalSchema = additionalToken;
+                        additionalAllowed = true;
+                        hasAdditionalSchema = true;
+                        additionalSchema = additionalElement;
                     }
                 }
 
-                foreach (var property in instance.Properties())
+                foreach (var property in instance.EnumerateObject())
                 {
-                    var propertyPath = path + "." + property.Name;
+                    var childPath = path == "$" ? "$" + "." + property.Name : path + "." + property.Name;
                     if (propertySchemas != null && propertySchemas.TryGetValue(property.Name, out var propertySchema))
                     {
-                        ValidateElement(propertySchema, property.Value, propertyPath, errors);
-                    }
-                    else if (additionalSchema != null)
-                    {
-                        ValidateElement(additionalSchema, property.Value, propertyPath, errors);
+                        ValidateElement(propertySchema, property.Value, childPath, errors);
                     }
                     else if (!additionalAllowed)
                     {
-                        errors.Add($"{propertyPath}: additional properties are not permitted");
+                        errors.Add($"{childPath}: additional properties are not allowed");
+                    }
+                    else if (hasAdditionalSchema)
+                    {
+                        ValidateElement(additionalSchema, property.Value, childPath, errors);
                     }
                 }
             }
 
-            private void ValidateArray(JObject schema, JArray instance, string path, List<string> errors)
+            private void ValidateArray(JsonElement schema, JsonElement instance, string path, List<string> errors)
             {
-                if (schema.TryGetValue("minItems", out var minItemsToken))
+                if (schema.TryGetProperty("minItems", out var minItemsElement))
                 {
-                    var minItems = minItemsToken.Value<int>();
-                    if (instance.Count < minItems)
+                    var minItems = minItemsElement.GetInt32();
+                    if (instance.GetArrayLength() < minItems)
                     {
-                        errors.Add($"{path}: array has {instance.Count} items but minimum is {minItems}");
+                        errors.Add($"{path}: expected at least {minItems} items but found {instance.GetArrayLength()}");
                     }
                 }
 
-                if (schema.TryGetValue("maxItems", out var maxItemsToken))
+                if (schema.TryGetProperty("maxItems", out var maxItemsElement))
                 {
-                    var maxItems = maxItemsToken.Value<int>();
-                    if (instance.Count > maxItems)
+                    var maxItems = maxItemsElement.GetInt32();
+                    if (instance.GetArrayLength() > maxItems)
                     {
-                        errors.Add($"{path}: array has {instance.Count} items but maximum is {maxItems}");
+                        errors.Add($"{path}: expected at most {maxItems} items but found {instance.GetArrayLength()}");
                     }
                 }
 
-                if (schema.TryGetValue("uniqueItems", out var uniqueItemsToken) && uniqueItemsToken.Type == JTokenType.Boolean && uniqueItemsToken.Value<bool>())
+                if (schema.TryGetProperty("items", out var itemsSchema))
                 {
-                    var seen = new HashSet<string>(StringComparer.Ordinal);
-                    for (var i = 0; i < instance.Count; i++)
+                    var index = 0;
+                    foreach (var item in instance.EnumerateArray())
                     {
-                        var key = JsonCompat.Normalize(instance[i].ToString(Formatting.None));
-                        if (!seen.Add(key))
-                        {
-                            errors.Add($"{path}[{i}]: duplicate entry detected");
-                            break;
-                        }
-                    }
-                }
-
-                if (!schema.TryGetValue("items", out var itemsToken))
-                {
-                    return;
-                }
-
-                if (itemsToken is JObject singleSchema)
-                {
-                    for (var i = 0; i < instance.Count; i++)
-                    {
-                        ValidateElement(singleSchema, instance[i], $"{path}[{i}]", errors);
-                    }
-                }
-                else if (itemsToken is JArray tupleSchemas)
-                {
-                    for (var i = 0; i < tupleSchemas.Count && i < instance.Count; i++)
-                    {
-                        ValidateElement(tupleSchemas[i], instance[i], $"{path}[{i}]", errors);
+                        ValidateElement(itemsSchema, item, $"{path}[{index}]", errors);
+                        index++;
                     }
                 }
             }
 
-            private void ValidateString(JObject schema, JToken instance, string path, List<string> errors)
+            private void ValidateString(JsonElement schema, JsonElement instance, string path, List<string> errors)
             {
-                var value = instance.Type == JTokenType.Null ? string.Empty : instance.Value<string>() ?? string.Empty;
-
-                if (schema.TryGetValue("minLength", out var minLengthToken))
+                var value = instance.GetString() ?? string.Empty;
+                if (schema.TryGetProperty("minLength", out var minLengthElement))
                 {
-                    var minLength = minLengthToken.Value<int>();
+                    var minLength = minLengthElement.GetInt32();
                     if (value.Length < minLength)
                     {
-                        errors.Add($"{path}: string length {value.Length} is less than minimum {minLength}");
+                        errors.Add($"{path}: string shorter than minimum length {minLength}");
                     }
                 }
 
-                if (schema.TryGetValue("maxLength", out var maxLengthToken))
+                if (schema.TryGetProperty("maxLength", out var maxLengthElement))
                 {
-                    var maxLength = maxLengthToken.Value<int>();
+                    var maxLength = maxLengthElement.GetInt32();
                     if (value.Length > maxLength)
                     {
-                        errors.Add($"{path}: string length {value.Length} exceeds maximum {maxLength}");
-                    }
-                }
-
-                if (schema.TryGetValue("pattern", out var patternToken))
-                {
-                    var pattern = patternToken.Value<string>();
-                    if (!string.IsNullOrEmpty(pattern))
-                    {
-                        if (!Regex.IsMatch(value, pattern, RegexOptions.CultureInvariant))
-                        {
-                            errors.Add($"{path}: string '{value}' does not match pattern '{pattern}'");
-                        }
+                        errors.Add($"{path}: string longer than maximum length {maxLength}");
                     }
                 }
             }
 
-            private void ValidateNumber(JObject schema, JToken instance, string path, List<string> errors)
+            private void ValidateNumber(JsonElement schema, JsonElement instance, string path, List<string> errors)
             {
                 var value = GetDecimalValue(instance);
-                if (schema.TryGetValue("minimum", out var minimumToken))
+                if (schema.TryGetProperty("minimum", out var minimumElement))
                 {
-                    var minimum = GetDecimalValue(minimumToken);
+                    var minimum = GetDecimalValue(minimumElement);
                     if (value < minimum)
                     {
                         errors.Add($"{path}: value {value} is less than minimum {minimum}");
                     }
                 }
 
-                if (schema.TryGetValue("maximum", out var maximumToken))
+                if (schema.TryGetProperty("maximum", out var maximumElement))
                 {
-                    var maximum = GetDecimalValue(maximumToken);
+                    var maximum = GetDecimalValue(maximumElement);
                     if (value > maximum)
                     {
                         errors.Add($"{path}: value {value} exceeds maximum {maximum}");
@@ -825,38 +825,43 @@ namespace WormWorld.Genome
                 }
             }
 
-            private decimal GetDecimalValue(JToken token)
+            private decimal GetDecimalValue(JsonElement element)
             {
-                if (token == null || token.Type == JTokenType.Null)
+                if (element.ValueKind != JsonValueKind.Number)
                 {
                     return 0m;
                 }
 
-                if (token.Type == JTokenType.Integer || token.Type == JTokenType.Float)
+                if (element.TryGetDecimal(out var dec))
                 {
-                    return Convert.ToDecimal(((JValue)token).Value, CultureInfo.InvariantCulture);
+                    return dec;
                 }
 
-                if (token.Type == JTokenType.String && decimal.TryParse(token.Value<string>(), NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out var parsed))
+                if (element.TryGetInt64(out var longValue))
                 {
-                    return parsed;
+                    return longValue;
                 }
 
-                return 0m;
+                if (element.TryGetUInt64(out var ulongValue))
+                {
+                    return ulongValue;
+                }
+
+                return Convert.ToDecimal(element.GetDouble(), CultureInfo.InvariantCulture);
             }
 
-            private bool IsTypeAllowed(JToken typeDefinition, JToken instance)
+            private bool IsTypeAllowed(JsonElement typeDefinition, JsonElement instance)
             {
-                if (typeDefinition.Type == JTokenType.String)
+                if (typeDefinition.ValueKind == JsonValueKind.String)
                 {
-                    return MatchesType(typeDefinition.Value<string>(), instance);
+                    return MatchesType(typeDefinition.GetString(), instance);
                 }
 
-                if (typeDefinition is JArray array)
+                if (typeDefinition.ValueKind == JsonValueKind.Array)
                 {
-                    foreach (var option in array)
+                    foreach (var option in typeDefinition.EnumerateArray())
                     {
-                        if (option.Type == JTokenType.String && MatchesType(option.Value<string>(), instance))
+                        if (option.ValueKind == JsonValueKind.String && MatchesType(option.GetString(), instance))
                         {
                             return true;
                         }
@@ -868,101 +873,105 @@ namespace WormWorld.Genome
                 return true;
             }
 
-            private bool MatchesType(string type, JToken instance)
+            private bool MatchesType(string? type, JsonElement instance)
             {
                 switch (type)
                 {
                     case "object":
-                        return instance.Type == JTokenType.Object;
+                        return instance.ValueKind == JsonValueKind.Object;
                     case "array":
-                        return instance.Type == JTokenType.Array;
+                        return instance.ValueKind == JsonValueKind.Array;
                     case "string":
-                        return instance.Type == JTokenType.String;
+                        return instance.ValueKind == JsonValueKind.String;
                     case "number":
-                        return instance.Type == JTokenType.Integer || instance.Type == JTokenType.Float;
+                        return instance.ValueKind == JsonValueKind.Number;
                     case "integer":
-                        return instance.Type == JTokenType.Integer || (instance.Type == JTokenType.Float && IsInteger(instance));
+                        return instance.ValueKind == JsonValueKind.Number && IsInteger(instance);
                     case "boolean":
-                        return instance.Type == JTokenType.Boolean;
+                        return instance.ValueKind == JsonValueKind.True || instance.ValueKind == JsonValueKind.False;
                     case "null":
-                        return instance.Type == JTokenType.Null;
+                        return instance.ValueKind == JsonValueKind.Null;
                     default:
                         return true;
                 }
             }
 
-            private bool IsInteger(JToken token)
+            private bool IsInteger(JsonElement element)
             {
-                if (token.Type == JTokenType.Integer)
+                if (element.ValueKind != JsonValueKind.Number)
+                {
+                    return false;
+                }
+
+                if (element.TryGetInt64(out _))
                 {
                     return true;
                 }
 
-                if (token.Type == JTokenType.Float)
+                if (element.TryGetUInt64(out _))
                 {
-                    var value = ((JValue)token).Value;
-                    if (value == null)
-                    {
-                        return false;
-                    }
+                    return true;
+                }
 
-                    var decimalValue = Convert.ToDecimal(value, CultureInfo.InvariantCulture);
-                    return decimal.Truncate(decimalValue) == decimalValue;
+                if (element.TryGetDecimal(out var dec))
+                {
+                    return decimal.Truncate(dec) == dec;
                 }
 
                 return false;
             }
 
-            private string DescribeType(JToken typeDefinition)
+            private string DescribeType(JsonElement typeDefinition)
             {
-                if (typeDefinition.Type == JTokenType.String)
+                if (typeDefinition.ValueKind == JsonValueKind.String)
                 {
-                    return typeDefinition.Value<string>() ?? "unknown";
+                    return typeDefinition.GetString() ?? "unknown";
                 }
 
-                if (typeDefinition is JArray array)
+                if (typeDefinition.ValueKind == JsonValueKind.Array)
                 {
-                    var values = array.Values<string?>().Where(v => !string.IsNullOrEmpty(v));
+                    var values = typeDefinition.EnumerateArray()
+                        .Where(element => element.ValueKind == JsonValueKind.String)
+                        .Select(element => element.GetString())
+                        .Where(value => !string.IsNullOrEmpty(value));
                     return string.Join(" | ", values);
                 }
 
                 return "unspecified";
             }
 
-            private string DescribeInstance(JToken instance)
+            private string DescribeInstance(JsonElement instance)
             {
-                switch (instance.Type)
+                switch (instance.ValueKind)
                 {
-                    case JTokenType.Object:
+                    case JsonValueKind.Object:
                         return "object";
-                    case JTokenType.Array:
+                    case JsonValueKind.Array:
                         return "array";
-                    case JTokenType.String:
+                    case JsonValueKind.String:
                         return "string";
-                    case JTokenType.Integer:
-                    case JTokenType.Float:
+                    case JsonValueKind.Number:
                         return "number";
-                    case JTokenType.Boolean:
+                    case JsonValueKind.True:
+                    case JsonValueKind.False:
                         return "boolean";
-                    case JTokenType.Null:
+                    case JsonValueKind.Null:
                         return "null";
                     default:
-                        return instance.Type.ToString();
+                        return instance.ValueKind.ToString();
                 }
             }
 
-            private bool JsonEquals(JToken left, JToken right)
+            private bool JsonEquals(JsonElement left, JsonElement right)
             {
-                var leftCanonical = JsonCompat.Normalize(left.ToString(Formatting.None));
-                var rightCanonical = JsonCompat.Normalize(right.ToString(Formatting.None));
-                return string.Equals(leftCanonical, rightCanonical, StringComparison.Ordinal);
+                return Canonicalize(left) == Canonicalize(right);
             }
 
-            private JToken ResolveReference(string reference)
+            private JsonElement ResolveReference(string reference)
             {
                 if (string.IsNullOrEmpty(reference) || reference == "#")
                 {
-                    return _schemaDocument;
+                    return _schemaDocument.RootElement;
                 }
 
                 if (!reference.StartsWith("#", StringComparison.Ordinal))
@@ -970,28 +979,27 @@ namespace WormWorld.Genome
                     throw new NotSupportedException($"Only local schema references are supported. Encountered '{reference}'.");
                 }
 
-                var pointer = reference.Substring(1);
+                var pointer = reference.Substring(1); // Trim leading '#'
                 var segments = pointer.Split('/', StringSplitOptions.RemoveEmptyEntries);
-                var current = _schemaDocument;
+                var current = _schemaDocument.RootElement;
                 foreach (var rawSegment in segments)
                 {
                     var segment = rawSegment.Replace("~1", "/").Replace("~0", "~");
-                    if (current.Type == JTokenType.Object)
+                    if (current.ValueKind == JsonValueKind.Object)
                     {
-                        var obj = (JObject)current;
-                        if (!obj.TryGetValue(segment, out current))
+                        if (!current.TryGetProperty(segment, out current))
                         {
                             throw new InvalidDataException($"Schema reference '{reference}' could not be resolved.");
                         }
                     }
-                    else if (current.Type == JTokenType.Array)
+                    else if (current.ValueKind == JsonValueKind.Array)
                     {
                         if (!int.TryParse(segment, NumberStyles.Integer, CultureInfo.InvariantCulture, out var index))
                         {
                             throw new InvalidDataException($"Schema reference '{reference}' targets non-object value.");
                         }
 
-                        var array = (JArray)current;
+                        var array = current.EnumerateArray().ToList();
                         if (index < 0 || index >= array.Count)
                         {
                             throw new InvalidDataException($"Schema reference '{reference}' is out of bounds.");
