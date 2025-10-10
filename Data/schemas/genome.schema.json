@@ -285,12 +285,6 @@
         "minimum": 0,
         "maximum": 10
       }
-    },
-    "pre_eval_fitness": {
-      "type": ["number", "null"],
-      "minimum": 0,
-      "maximum": 1,
-      "description": "Optional placeholder fitness stored before deterministic simulation evaluation."
     }
   },
   "$defs": {

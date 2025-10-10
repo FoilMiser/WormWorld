@@ -103,7 +103,6 @@ namespace WormWorld.Tests.EditMode
             Assert.That(actual.NervesJson, Is.EqualTo(expected.NervesJson), $"Nerves mismatch at genome {index}.");
             Assert.That(actual.EnergyJson, Is.EqualTo(expected.EnergyJson), $"Energy mismatch at genome {index}.");
             Assert.That(actual.FitnessJson, Is.EqualTo(expected.FitnessJson), $"Fitness mismatch at genome {index}.");
-            Assert.That(actual.PreEvalFitness, Is.EqualTo(expected.PreEvalFitness), $"Pre-eval fitness mismatch at genome {index}.");
         }
 
         private static Genome CloneGenome(Genome source)
@@ -129,9 +128,8 @@ namespace WormWorld.Tests.EditMode
 
         private static string ComputeHash(string canonicalJson)
         {
-            var normalized = JsonCompat.Normalize(canonicalJson);
             using var sha = SHA256.Create();
-            var bytes = Encoding.UTF8.GetBytes(normalized);
+            var bytes = Encoding.UTF8.GetBytes(canonicalJson);
             var hash = sha.ComputeHash(bytes);
             return BitConverter.ToString(hash).Replace("-", string.Empty);
         }
